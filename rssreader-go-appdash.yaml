@@ -1,0 +1,194 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: cassandra
+  labels:
+    name: cassandra
+spec:
+  type: NodePort
+  ports:
+    - port: 9042
+      name: cql
+      nodePort: 31002
+    - port: 9160
+      name: thrift
+      nodePort: 31003
+  selector:
+    name: cassandra
+---
+apiVersion: v1
+kind: ReplicationController
+metadata:
+  labels:
+    name: cassandra
+  name: cassandra
+spec:
+  replicas: 1
+  selector:
+    name: cassandra
+  template:
+    metadata:
+      labels:
+        name: cassandra
+    spec:
+      containers:
+        - command:
+            - /run.sh
+          resources:
+            limits:
+              cpu: 0.5
+          env:
+            - name: MAX_HEAP_SIZE
+              value: 512M
+            - name: HEAP_NEWSIZE
+              value: 100M
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          image: gcr.io/google_containers/cassandra:v5
+          name: cassandra
+          ports:
+            - containerPort: 9042
+              name: cql
+            - containerPort: 9160
+              name: thrift
+          volumeMounts:
+            - mountPath: /cassandra_data
+              name: data
+      volumes:
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: middletier
+  labels:
+    name: middletier
+spec:
+  type: NodePort
+  ports:
+  - port: 9191
+    nodePort: 31001
+    name: http
+  selector:
+    name: middletier
+---
+apiVersion: v1
+kind: ReplicationController
+metadata:
+  name: middletier
+  labels:
+    name: middletier
+spec:
+  replicas: 1
+  selector:
+    name: middletier
+  template:
+    metadata:
+      labels:
+        name: middletier
+    spec:
+      containers:
+      - name: middletier
+        image: teeratpitakrat/recipes-rss-middletier-go:0.1.0
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 9191
+        resources:
+          requests:
+            cpu: "0.5"
+            memory: 700M
+          limits:
+            cpu: "1"
+            memory: 2000M
+        env:
+          - name: CASSANDRA_ADDR
+            value: "cassandra"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: edge
+  labels:
+    name: edge
+spec:
+  type: NodePort
+  ports:
+  - port: 9090
+    name: http
+    nodePort: 31000
+  selector:
+    name: edge
+---
+apiVersion: v1
+kind: ReplicationController
+metadata:
+  name: edge
+  labels:
+    name: edge
+spec:
+  replicas: 1
+  selector:
+    name: edge
+  template:
+    metadata:
+      labels:
+        name: edge
+    spec:
+      containers:
+      - name: edge
+        image: teeratpitakrat/recipes-rss-edge-go:0.1.0
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 9090
+        resources:
+          requests:
+            cpu: "0.5"
+            memory: 500M
+          limits:
+            cpu: "1"
+            memory: 2000M
+        env:
+          - name: EDGE_LISTEN_ADDR_PORT
+            value: ":9090"
+          - name: MIDDLETIER_ADDR_PORT
+            value: "middletier:9191"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rssserver
+  labels:
+    name: rssserver
+spec:
+  type: NodePort
+  ports:
+  - port: 80
+    name: http
+    nodePort: 31040
+  selector:
+    name: rssserver
+---
+apiVersion: v1
+kind: ReplicationController
+metadata:
+  name: rssserver
+  labels:
+    name: rssserver
+spec:
+  replicas: 1
+  selector:
+    name: rssserver
+  template:
+    metadata:
+      labels:
+        name: rssserver
+    spec:
+      containers:
+      - name: rssserver
+        image: hora/recipes-rss-rssserver:0.1
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 80
